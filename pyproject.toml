@@ -1,0 +1,116 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quantai-autogen"
+version = "0.1.0"
+description = "Multi-agent AI system for automated financial quantitative algorithm generation, backtesting, and execution"
+authors = [
+    {name = "QuantAI Team", email = "team@quantai.dev"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    # AutoGen Core
+    "autogen-agentchat>=0.5.7",
+    "autogen-core>=0.5.7",
+    "autogen-ext[openai]>=0.5.7",
+    
+    # AI Models
+    "openai>=1.0.0",
+    "anthropic>=0.25.0",
+    "google-generativeai>=0.5.0",
+    
+    # Data Processing
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "yfinance>=0.2.0",
+    "alpha-vantage>=2.3.0",
+    "newsapi-python>=0.2.6",
+    "beautifulsoup4>=4.12.0",
+    "requests>=2.31.0",
+    
+    # Web Scraping
+    "playwright>=1.40.0",
+    "selenium>=4.15.0",
+    
+    # Database & Storage
+    "sqlalchemy>=2.0.0",
+    "redis>=5.0.0",
+    
+    # Web Framework
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "websockets>=12.0",
+    
+    # Utilities
+    "pydantic>=2.5.0",
+    "python-dotenv>=1.0.0",
+    "loguru>=0.7.0",
+    "asyncio-mqtt>=0.16.0",
+    "schedule>=1.2.0",
+    
+    # Visualization
+    "matplotlib>=3.7.0",
+    "plotly>=5.17.0",
+    "streamlit>=1.28.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.6.0",
+    "pre-commit>=3.5.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/quantai/quantai-autogen"
+Repository = "https://github.com/quantai/quantai-autogen"
+Documentation = "https://quantai-autogen.readthedocs.io"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[project.scripts]
+quantai = "quantai.cli:main"
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=src --cov-report=html --cov-report=term-missing"
+asyncio_mode = "auto"
