@@ -232,3 +232,6 @@ docker-compose.override.yml
 alerts/
 notifications/
 monitoring/
+
+# Augment IDE files
+.augment/
