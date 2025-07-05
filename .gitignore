@@ -200,8 +200,21 @@ backtest_results/
 performance_reports/
 market_data/
 *.csv
-*.json
 *.parquet
+
+# Analysis and optimization reports (keep locally, exclude from repo)
+*_report.json
+*_analysis.json
+*_optimization*.json
+revenue_optimization_report.json
+small_capital_optimization.json
+api_configuration_audit_report.json
+integration_test_report.json
+production_config_validation_report.json
+production_readiness_report.json
+production_simulation_report.json
+financial_projection_validation_report.json
+pre_deployment_check_report.json
 
 # AI model artifacts
 embeddings/
