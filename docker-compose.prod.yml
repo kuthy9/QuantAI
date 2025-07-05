@@ -1,0 +1,284 @@
+version: '3.8'
+
+services:
+  # Main QuantAI Application - Production Optimized
+  quantai-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - BUILD_ENV=production
+    container_name: quantai-app-prod
+    environment:
+      - QUANTAI_ENV=production
+      - DATABASE_URL=postgresql://quantai:${POSTGRES_PASSWORD}@postgres:5432/quantai
+      - REDIS_URL=redis://redis:6379/0
+      - CHROMA_PERSIST_DIRECTORY=/app/data/memory
+      - LOG_LEVEL=${LOG_LEVEL:-WARNING}
+      - ENABLE_METRICS=true
+      - TRADING_MODE=${TRADING_MODE:-paper}
+      - IBKR_HOST=${IBKR_HOST:-127.0.0.1}
+      - IBKR_PORT=${IBKR_PORT:-7497}
+      - IBKR_CLIENT_ID=${IBKR_CLIENT_ID:-1}
+      - IBKR_ACCOUNT=${IBKR_ACCOUNT:-DUA559603}
+      - PYTHONUNBUFFERED=1
+      - PYTHONOPTIMIZE=1
+      - MAX_WORKERS=${MAX_WORKERS:-4}
+      - WORKER_TIMEOUT=${WORKER_TIMEOUT:-300}
+      - KEEP_ALIVE=${KEEP_ALIVE:-2}
+      - MAX_REQUESTS=${MAX_REQUESTS:-1000}
+      - MAX_REQUESTS_JITTER=${MAX_REQUESTS_JITTER:-100}
+      - PRELOAD_APP=true
+    volumes:
+      - ./data:/app/data:rw
+      - ./logs:/app/logs:rw
+      - ./config:/app/config:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - quantai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+    security_opt:
+      - no-new-privileges:true
+    read_only: false
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 65535
+        hard: 65535
+
+  # PostgreSQL Database - Production Optimized
+  postgres:
+    image: postgres:15-alpine
+    container_name: quantai-postgres-prod
+    environment:
+      - POSTGRES_DB=quantai
+      - POSTGRES_USER=quantai
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./config/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    restart: unless-stopped
+    networks:
+      - quantai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quantai -d quantai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=all
+      -c max_connections=200
+      -c shared_buffers=512MB
+      -c effective_cache_size=1536MB
+      -c maintenance_work_mem=128MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=4MB
+      -c min_wal_size=1GB
+      -c max_wal_size=4GB
+
+  # Redis Cache - Production Optimized
+  redis:
+    image: redis:7-alpine
+    container_name: quantai-redis-prod
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --tcp-keepalive 300
+      --timeout 0
+      --tcp-backlog 511
+      --databases 16
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --rdbcompression yes
+      --rdbchecksum yes
+      --stop-writes-on-bgsave-error yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    restart: unless-stopped
+    networks:
+      - quantai-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 1.5G
+          cpus: '0.5'
+        reservations:
+          memory: 1G
+          cpus: '0.25'
+    security_opt:
+      - no-new-privileges:true
+
+  # Nginx Reverse Proxy - Production Optimized
+  nginx:
+    image: nginx:alpine
+    container_name: quantai-nginx-prod
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx:rw
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - quantai-app
+    restart: unless-stopped
+    networks:
+      - quantai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    security_opt:
+      - no-new-privileges:true
+
+  # Production Monitoring and Health Checks
+  quantai-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: quantai-monitor-prod
+    environment:
+      - QUANTAI_ENV=production
+      - QUANTAI_ROLE=production_monitor
+      - MONITOR_INTERVAL=10
+      - HEALTH_CHECK_TIMEOUT=5
+      - ALERT_THRESHOLD=3
+      - ENABLE_ALERTS=true
+    volumes:
+      - ./logs:/app/logs:rw
+      - ./config:/app/config:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: ["python", "-m", "quantai.monitoring.production_monitor"]
+    depends_on:
+      - quantai-app
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - quantai-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.25'
+        reservations:
+          memory: 256M
+          cpus: '0.1'
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-./data}/postgres
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-./data}/redis
+
+networks:
+  quantai-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
