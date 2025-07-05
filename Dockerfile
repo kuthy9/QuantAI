@@ -63,9 +63,16 @@ USER quantai
 # Expose ports
 EXPOSE 8000 8080
 
+# Add health check script
+COPY --chown=quantai:quantai scripts/health_check.py ./scripts/
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD python scripts/health_check.py || exit 1
+
+# Add startup script
+COPY --chown=quantai:quantai scripts/startup.sh ./scripts/
+RUN chmod +x ./scripts/startup.sh
 
 # Default command
-CMD ["python", "-m", "quantai.main"]
+CMD ["./scripts/startup.sh"]

@@ -73,6 +73,37 @@ class MessageType(str, Enum):
     GENERAL_RESPONSE = "general_response"
     ERROR = "error"
 
+    # Performance Attribution Message Types
+    PERFORMANCE_ATTRIBUTION_REQUEST = "performance_attribution_request"
+    PERFORMANCE_ATTRIBUTION_RESPONSE = "performance_attribution_response"
+    PERFORMANCE_SUMMARY_REQUEST = "performance_summary_request"
+    PERFORMANCE_SUMMARY_RESPONSE = "performance_summary_response"
+    ROLLING_ATTRIBUTION_REQUEST = "rolling_attribution_request"
+    ROLLING_ATTRIBUTION_RESPONSE = "rolling_attribution_response"
+    FACTOR_ATTRIBUTION_REQUEST = "factor_attribution_request"
+    FACTOR_ATTRIBUTION_RESPONSE = "factor_attribution_response"
+    SECTOR_ATTRIBUTION_REQUEST = "sector_attribution_request"
+    SECTOR_ATTRIBUTION_RESPONSE = "sector_attribution_response"
+    RETURNS_DATA_UPDATE = "returns_data_update"
+    DATA_UPDATE_CONFIRMATION = "data_update_confirmation"
+
+    # Compliance Message Types
+    COMPLIANCE_CHECK_REQUEST = "compliance_check_request"
+    COMPLIANCE_CHECK_RESPONSE = "compliance_check_response"
+    AUDIT_LOG_REQUEST = "audit_log_request"
+    AUDIT_LOG_RESPONSE = "audit_log_response"
+    TRADE_REPORT_REQUEST = "trade_report_request"
+    TRADE_REPORT_RESPONSE = "trade_report_response"
+    REGULATORY_REPORT_REQUEST = "regulatory_report_request"
+    REGULATORY_REPORT_RESPONSE = "regulatory_report_response"
+    COMPLIANCE_VIOLATION_ALERT = "compliance_violation_alert"
+    COMPLIANCE_DASHBOARD_REQUEST = "compliance_dashboard_request"
+    COMPLIANCE_DASHBOARD_RESPONSE = "compliance_dashboard_response"
+
+    # Additional system messages
+    TRADE_EXECUTION = "trade_execution"
+    POSITION_UPDATE = "position_update"
+
 
 class Priority(str, Enum):
     """Message priority levels."""
@@ -347,6 +378,205 @@ class ControlMessage(QuantMessage):
         self.control_action = control_action
         self.target_component = target_component
         self.control_parameters = control_parameters or {}
+
+
+# Compliance Message Classes
+
+class ComplianceCheckRequest(QuantMessage):
+    """Request for compliance checking."""
+
+    def __init__(
+        self,
+        sender_id: str,
+        event_type: str,
+        event_data: Dict[str, Any],
+        account_id: Optional[str] = None,
+        strategy_id: Optional[str] = None,
+        **kwargs
+    ):
+        super().__init__(MessageType.COMPLIANCE_CHECK_REQUEST, sender_id, **kwargs)
+        self.event_type = event_type
+        self.event_data = event_data
+        self.account_id = account_id
+        self.strategy_id = strategy_id
+
+
+class ComplianceCheckResponse(QuantMessage):
+    """Response to compliance check request."""
+
+    def __init__(
+        self,
+        sender_id: str,
+        compliance_status: str,
+        violations: List[Dict[str, Any]],
+        check_timestamp: str,
+        **kwargs
+    ):
+        super().__init__(MessageType.COMPLIANCE_CHECK_RESPONSE, sender_id, **kwargs)
+        self.compliance_status = compliance_status
+        self.violations = violations
+        self.check_timestamp = check_timestamp
+
+
+class AuditLogRequest(QuantMessage):
+    """Request to log an audit event."""
+
+    def __init__(
+        self,
+        sender_id: str,
+        event_type: str,
+        description: str,
+        event_data: Dict[str, Any],
+        severity: str = "medium",
+        user_id: Optional[str] = None,
+        account_id: Optional[str] = None,
+        **kwargs
+    ):
+        super().__init__(MessageType.AUDIT_LOG_REQUEST, sender_id, **kwargs)
+        self.event_type = event_type
+        self.description = description
+        self.event_data = event_data
+        self.severity = severity
+        self.user_id = user_id
+        self.account_id = account_id
+
+
+class AuditLogResponse(QuantMessage):
+    """Response to audit log request."""
+
+    def __init__(
+        self,
+        sender_id: str,
+        audit_event_id: str,
+        status: str,
+        timestamp: str,
+        **kwargs
+    ):
+        super().__init__(MessageType.AUDIT_LOG_RESPONSE, sender_id, **kwargs)
+        self.audit_event_id = audit_event_id
+        self.status = status
+        self.timestamp = timestamp
+
+
+class TradeReportRequest(QuantMessage):
+    """Request to report a trade execution."""
+
+    def __init__(
+        self,
+        sender_id: str,
+        trade_id: str,
+        account_id: str,
+        symbol: str,
+        side: str,
+        quantity: float,
+        price: float,
+        execution_time: str,
+        strategy_id: Optional[str] = None,
+        market_data: Optional[Dict[str, float]] = None,
+        execution_quality: Optional[Dict[str, float]] = None,
+        costs: Optional[Dict[str, float]] = None,
+        regulatory_info: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ):
+        super().__init__(MessageType.TRADE_REPORT_REQUEST, sender_id, **kwargs)
+        self.trade_id = trade_id
+        self.account_id = account_id
+        self.symbol = symbol
+        self.side = side
+        self.quantity = quantity
+        self.price = price
+        self.execution_time = execution_time
+        self.strategy_id = strategy_id
+        self.market_data = market_data
+        self.execution_quality = execution_quality
+        self.costs = costs
+        self.regulatory_info = regulatory_info
+
+
+class TradeReportResponse(QuantMessage):
+    """Response to trade report request."""
+
+    def __init__(
+        self,
+        sender_id: str,
+        report_id: str,
+        status: str,
+        trade_id: str,
+        total_cost: float,
+        slippage: Optional[float] = None,
+        **kwargs
+    ):
+        super().__init__(MessageType.TRADE_REPORT_RESPONSE, sender_id, **kwargs)
+        self.report_id = report_id
+        self.status = status
+        self.trade_id = trade_id
+        self.total_cost = total_cost
+        self.slippage = slippage
+
+
+class RegulatoryReportRequest(QuantMessage):
+    """Request to generate a regulatory report."""
+
+    def __init__(
+        self,
+        sender_id: str,
+        template_id: str,
+        start_date: str,
+        end_date: str,
+        **kwargs
+    ):
+        super().__init__(MessageType.REGULATORY_REPORT_REQUEST, sender_id, **kwargs)
+        self.template_id = template_id
+        self.start_date = start_date
+        self.end_date = end_date
+
+
+class RegulatoryReportResponse(QuantMessage):
+    """Response to regulatory report request."""
+
+    def __init__(
+        self,
+        sender_id: str,
+        report_id: str,
+        status: str,
+        output_path: str,
+        generated_at: str,
+        **kwargs
+    ):
+        super().__init__(MessageType.REGULATORY_REPORT_RESPONSE, sender_id, **kwargs)
+        self.report_id = report_id
+        self.status = status
+        self.output_path = output_path
+        self.generated_at = generated_at
+
+
+class ComplianceViolationAlert(QuantMessage):
+    """Alert for compliance violations."""
+
+    def __init__(
+        self,
+        sender_id: str,
+        violation_id: str,
+        rule_type: str,
+        status: str,
+        description: str,
+        current_value: Optional[float] = None,
+        threshold_value: Optional[float] = None,
+        account_id: Optional[str] = None,
+        symbol: Optional[str] = None,
+        detected_at: str = None,
+        **kwargs
+    ):
+        super().__init__(MessageType.COMPLIANCE_VIOLATION_ALERT, sender_id, **kwargs)
+        self.violation_id = violation_id
+        self.rule_type = rule_type
+        self.status = status
+        self.description = description
+        self.current_value = current_value
+        self.threshold_value = threshold_value
+        self.account_id = account_id
+        self.symbol = symbol
+        self.detected_at = detected_at
 
 
 # Message type mapping for easy access

@@ -15,7 +15,8 @@ from loguru import logger
 
 from ...core.base import BaseQuantAgent, AgentRole, AgentCapability
 from ...core.messages import QuantMessage, MessageType, TradeMessage
-from ...integrations.ibkr import IBKRClient, IBKRConfig
+from ...integrations.ibkr import IBKRClient, IBKRConfig, TradingMode
+from ...integrations.trading_manager import TradingManager, TradingManagerConfig
 from ...integrations.telegram import TelegramNotifier, TelegramConfig
 
 
@@ -51,9 +52,15 @@ class ExecutionAgent(BaseQuantAgent):
             'total_volume': 0.0
         }
 
-        # IBKR integration
+        # Enhanced Trading Manager integration
+        self.use_trading_manager = os.getenv("USE_TRADING_MANAGER", "true").lower() == "true"
+        self.trading_manager: Optional[TradingManager] = None
+        if self.use_trading_manager:
+            self._initialize_trading_manager()
+
+        # Legacy IBKR integration (fallback)
         self.ibkr_client: Optional[IBKRClient] = None
-        if self.use_ibkr:
+        if self.use_ibkr and not self.use_trading_manager:
             self._initialize_ibkr()
 
         # Telegram integration
@@ -61,17 +68,27 @@ class ExecutionAgent(BaseQuantAgent):
         if self.use_telegram:
             self._initialize_telegram()
 
-    def _initialize_ibkr(self):
-        """Initialize IBKR client."""
+    def _initialize_trading_manager(self):
+        """Initialize enhanced Trading Manager."""
         try:
-            config = IBKRConfig(
-                host=os.getenv("IB_HOST", "127.0.0.1"),
-                port=int(os.getenv("IB_PORT", "7497")),
-                client_id=int(os.getenv("IB_CLIENT_ID", "1")),
-                account=os.getenv("IB_ACCOUNT", "DUA559603")
-            )
+            config = TradingManagerConfig()
+            self.trading_manager = TradingManager(config)
+            logger.info(f"Trading Manager initialized in {config.ibkr_config.trading_mode.value.upper()} mode")
+
+            # Setup event handlers
+            self.trading_manager.on_order_filled = self._handle_order_filled
+            self.trading_manager.on_error = self._handle_trading_error
+
+        except Exception as e:
+            logger.error(f"Failed to initialize Trading Manager: {e}")
+            self.use_trading_manager = False
+
+    def _initialize_ibkr(self):
+        """Initialize legacy IBKR client."""
+        try:
+            config = IBKRConfig.from_env()
             self.ibkr_client = IBKRClient(config)
-            logger.info("IBKR client initialized")
+            logger.info(f"Legacy IBKR client initialized in {config.trading_mode.value.upper()} mode")
         except Exception as e:
             logger.error(f"Failed to initialize IBKR client: {e}")
             self.use_ibkr = False
@@ -183,8 +200,11 @@ class ExecutionAgent(BaseQuantAgent):
         }
         
         try:
-            if self.use_ibkr and self.ibkr_client and self.ibkr_client.is_connected():
-                # Execute through IBKR
+            if self.use_trading_manager and self.trading_manager:
+                # Execute through enhanced Trading Manager
+                result = await self.trading_manager.place_order(trade)
+            elif self.use_ibkr and self.ibkr_client and self.ibkr_client.is_connected():
+                # Execute through legacy IBKR
                 result = await self._execute_ibkr_trade(trade)
             else:
                 # Fallback to simulation
@@ -421,3 +441,90 @@ class ExecutionAgent(BaseQuantAgent):
     def get_execution_stats(self) -> Dict[str, Any]:
         """Get execution statistics."""
         return self.execution_stats.copy()
+
+    def _handle_order_filled(self, order_info: Dict[str, Any]):
+        """Handle order fill events from Trading Manager."""
+        logger.info(f"Order filled: {order_info['trade_id']} - {order_info['symbol']}")
+
+        # Update execution stats
+        self.execution_stats['successful_trades'] += 1
+        self.execution_stats['total_volume'] += order_info.get('fill_quantity', 0) * order_info.get('fill_price', 0)
+
+        # Move from pending to executed
+        trade_id = order_info['trade_id']
+        if trade_id in self.pending_orders:
+            executed_trade = self.pending_orders[trade_id].copy()
+            executed_trade.update(order_info)
+            executed_trade['execution_time'] = datetime.now()
+
+            self.executed_trades.append(executed_trade)
+            del self.pending_orders[trade_id]
+
+    def _handle_trading_error(self, error_code: Any, error_message: str):
+        """Handle trading errors from Trading Manager."""
+        logger.error(f"Trading error {error_code}: {error_message}")
+
+        # Could implement error recovery logic here
+        # For now, just log the error
+
+    async def start_trading_session(self) -> Dict[str, Any]:
+        """Start a new trading session."""
+        if self.use_trading_manager and self.trading_manager:
+            success = await self.trading_manager.start_session()
+            if success:
+                logger.info("✅ Trading session started successfully")
+                return {
+                    "status": "success",
+                    "message": "Trading session started",
+                    "session_info": self.trading_manager.get_session_status()
+                }
+            else:
+                logger.error("❌ Failed to start trading session")
+                return {
+                    "status": "error",
+                    "message": "Failed to start trading session"
+                }
+        else:
+            return {
+                "status": "error",
+                "message": "Trading Manager not available"
+            }
+
+    async def stop_trading_session(self) -> Dict[str, Any]:
+        """Stop the current trading session."""
+        if self.use_trading_manager and self.trading_manager:
+            await self.trading_manager.stop_session()
+            logger.info("Trading session stopped")
+            return {
+                "status": "success",
+                "message": "Trading session stopped"
+            }
+        else:
+            return {
+                "status": "error",
+                "message": "Trading Manager not available"
+            }
+
+    def get_trading_status(self) -> Dict[str, Any]:
+        """Get comprehensive trading status."""
+        status = {
+            "agent_id": self.agent_id,
+            "use_trading_manager": self.use_trading_manager,
+            "use_ibkr": self.use_ibkr,
+            "use_telegram": self.use_telegram,
+            "execution_stats": self.execution_stats.copy(),
+            "pending_orders_count": len(self.pending_orders),
+            "executed_trades_count": len(self.executed_trades)
+        }
+
+        # Add Trading Manager status if available
+        if self.use_trading_manager and self.trading_manager:
+            status["trading_manager"] = self.trading_manager.get_session_status()
+
+        # Add IBKR status if available
+        if self.use_ibkr and self.ibkr_client:
+            status["ibkr_connected"] = self.ibkr_client.is_connected()
+            if hasattr(self.ibkr_client, 'get_trading_mode'):
+                status["trading_mode"] = self.ibkr_client.get_trading_mode().value
+
+        return status

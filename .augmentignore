@@ -79,9 +79,10 @@ market_data/
 *.pkl
 *.joblib
 
-# Environment files
-.env
+# Environment files (exclude production .env from context for security)
 .env.local
+.env.development
+.env.test
 .env.production
 .env.docker
 
@@ -116,6 +117,8 @@ PRODUCTION_*.md
 TECHNICAL_*.md
 FINANCIAL_*.md
 MULTI_PRODUCT_*.md
+FINAL_SYSTEM_ANALYSIS_*.md
+production_readiness_report.json
 
 # Backup files
 *.bak

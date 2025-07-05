@@ -8,10 +8,17 @@ services:
       dockerfile: Dockerfile
     container_name: quantai-app
     environment:
-      - QUANTAI_ENV=development
+      - QUANTAI_ENV=${QUANTAI_ENV:-production}
       - DATABASE_URL=postgresql://quantai:quantai@postgres:5432/quantai
       - REDIS_URL=redis://redis:6379/0
       - CHROMA_PERSIST_DIRECTORY=/app/data/memory
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ENABLE_METRICS=${ENABLE_METRICS:-true}
+      - TRADING_MODE=${TRADING_MODE:-paper}
+      - IBKR_HOST=${IBKR_HOST:-127.0.0.1}
+      - IBKR_PORT=${IBKR_PORT:-7497}
+      - IBKR_CLIENT_ID=${IBKR_CLIENT_ID:-1}
+      - IBKR_ACCOUNT=${IBKR_ACCOUNT:-DUA559603}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -19,12 +26,34 @@ services:
     ports:
       - "8000:8000"  # API server
     depends_on:
-      - postgres
-      - redis
-      - chroma
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chroma:
+        condition: service_started
     restart: unless-stopped
     networks:
       - quantai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
 
   # Dashboard
   quantai-dashboard:
@@ -49,7 +78,8 @@ services:
     environment:
       - POSTGRES_DB=quantai
       - POSTGRES_USER=quantai
-      - POSTGRES_PASSWORD=quantai
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-quantai}
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -58,12 +88,22 @@ services:
     restart: unless-stopped
     networks:
       - quantai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quantai -d quantai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # Redis Cache
   redis:
     image: redis:7-alpine
     container_name: quantai-redis
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
     ports:
@@ -71,6 +111,16 @@ services:
     restart: unless-stopped
     networks:
       - quantai-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # ChromaDB Vector Database
   chroma:
@@ -126,7 +176,7 @@ services:
     networks:
       - quantai-network
 
-  # Nginx Reverse Proxy
+  # Nginx Reverse Proxy with Load Balancing
   nginx:
     image: nginx:alpine
     container_name: quantai-nginx
@@ -143,6 +193,34 @@ services:
     restart: unless-stopped
     networks:
       - quantai-network
+
+  # Failover Monitor Service
+  quantai-failover:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: quantai-failover
+    environment:
+      - QUANTAI_ENV=${QUANTAI_ENV:-production}
+      - QUANTAI_ROLE=failover_monitor
+      - MONITOR_INTERVAL=30
+      - FAILOVER_THRESHOLD=3
+    volumes:
+      - ./logs:/app/logs
+      - ./config:/app/config
+    command: ["python", "-m", "quantai.monitoring.failover_monitor"]
+    depends_on:
+      - quantai-app
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - quantai-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 60s
+      timeout: 10s
+      retries: 2
 
 volumes:
   postgres_data:
